@@ -1,0 +1,13 @@
+var a = 1 ;
+var name_and_lastname = "Gjergj Kadriu" ;
+name_and_lastname ;
+var num1 = ( + 1.5 1 ) ;
+var num = ( + ( + 1 ( + ( + 1 5 ) 5 ) ) ( + 1 5 ) ) ;
+num ; 
+( + (
+     + ( + ( + 1 ( + ( + 1 5 ) 5 ) ) ( + 1 5 ) ) 
+     ( + ( + 1 5 ) 5 ) ) ( + 1 5 ) ) ;
+5 ; 
+"Gjergj" ;
+var num5 = 5 ;
+( + ( - num5 5 ) 5 ) ;

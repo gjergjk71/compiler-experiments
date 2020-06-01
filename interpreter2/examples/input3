@@ -1,0 +1,5 @@
+var a = 10 ; 
+while a __start__
+    set a = ( - a 2.5 ) ; 
+    set a = ( - a 2.5 ) ; 
+__end__

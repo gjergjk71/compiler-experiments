@@ -21,6 +21,10 @@ const int OPEN_PARENTHESIS = 15;
 const int CLOSE_PARENTHESIS = 16;
 const int COMMA = 17;
 const int TYPE = 18;
+const int SPECIAL_OPEN_PAREN = 19;
+const int SPECIAL_CLOSE_PAREN = 20;
+const int WHILE_LOOP = 21;
+const int SET_VAR = 22;
 
 const int AST_NODE_CONSTANT = 30;
 // const int AST_NODE_ADD = 31;
@@ -31,6 +35,8 @@ const int AST_NODE_DECLARATION = 35;
 const int AST_NODE_IDENTIFIER = 36;
 const int AST_NODE_OPERATOR = 37;
 const int AST_NODE_IDENTIFIER_INIT = 38;
+const int AST_NODE_WHILE_LOOP = 39;
+const int AST_NODE_SET_VAR = 40;
 
 struct token
 {
@@ -80,8 +86,11 @@ void show_ast_nodes(struct ast_nodes *ast_nodes);
 void lex(char *sourceCode, struct token *root_token);
 void slice_str(const char *str, char *buffer, size_t start, size_t end);
 void *evaluateNode(struct ast_node *ast_node, struct symbol_node *root_symbol_node);
-void evaluate(struct ast_nodes *ast_nodes, struct symbol_node *root_symbol_node);
+int evaluate(struct ast_nodes *ast_nodes, struct symbol_node *root_symbol_node);
 void add_symbol(struct symbol_node *root_symbol_node, struct symbol_node *new_symbol);
+int rule_while_loop(struct token *token, struct ast_node **ast_node, struct token **cToken);
+int rule_set_var_1_2_3(struct token *token, struct ast_node **ast_node, int type);
+int rule7(struct token *token, struct ast_node **ast_node, struct token **cToken);
 
 void show_tokens(struct token *root_token)
 {
@@ -147,15 +156,25 @@ struct ast_node* get_ast_node(struct token **root_token, struct ast_node **ast_n
     int rule1_valid = rule1_2_3(cToken, ast_node_pp, STRING);
     int rule2_valid = rule1_2_3(cToken, ast_node_pp, INTEGER);
     int rule3_valid = rule1_2_3(cToken, ast_node_pp, FLOAT);
+
+    int rule_set_var_1_valid = rule_set_var_1_2_3(cToken, ast_node_pp, STRING);
+    int rule_set_var_2_valid = rule_set_var_1_2_3(cToken, ast_node_pp, INTEGER);
+    int rule_set_var_3_valid = rule_set_var_1_2_3(cToken, ast_node_pp, FLOAT);
+
     int rule5_valid = rule5(cToken, ast_node_pp);
+
     struct token *rule4_toToken = cToken;
     int rule4_valid = rule4(cToken, ast_node_pp, &rule4_toToken);
 
     struct token *rule6_toToken = cToken;
     int rule6_valid = rule6(cToken, ast_node_pp, &rule6_toToken);
 
-    // printf("rules: %d %d %d %d\n", rule0_valid, rule1_valid, rule2_valid, rule3_valid);
-    // printf("cToken type: %d\n", cToken->type);
+    struct token *rule7_toToken = cToken;
+    int rule7_valid = rule7(cToken, ast_node_pp, &rule7_toToken);
+
+    struct token *rule_while_loop_toToken = cToken;
+    int rule_while_loop_valid =  rule_while_loop(cToken,ast_node_pp,&rule_while_loop_toToken);
+
 
     if (rule1_valid)
     {
@@ -192,6 +211,30 @@ struct ast_node* get_ast_node(struct token **root_token, struct ast_node **ast_n
     {
         cToken = rule6_toToken;
         printf("Rule 6 semi-passed;\n");
+    }
+    else if (rule7_valid)
+    {
+        cToken = rule7_toToken;
+        printf("Rule 7 semi-passed;\n");
+    }
+    else if (rule_while_loop_valid)
+    {
+        printf("rule_while_loop_valid passed\n");
+        cToken = rule_while_loop_toToken->next;
+        *root_token = cToken;
+        return *ast_node_pp;
+    }
+    else if (rule_set_var_1_valid) {
+        cToken = cToken->next->next->next->next;
+        printf("Rule: rule_set_var_1_valid passed\n");
+    }
+    else if (rule_set_var_2_valid) {
+        cToken = cToken->next->next->next->next;
+        printf("Rule: rule_set_var_2_valid passed\n");
+    }
+    else if (rule_set_var_3_valid) {
+        cToken = cToken->next->next->next->next;
+        printf("Rule: rule_set_var_3_valid passed\n");
     }
     else
     {
@@ -235,12 +278,16 @@ int get_ast(struct token *root_token, struct ast_nodes **ast_nodes_pp)
         ast_nodes->current = malloc(sizeof(struct ast_node));
         ast_nodes->current->type = -1;
         ast_nodes->current = get_ast_node(&cToken, &ast_nodes->current);
-        if (cToken) {
+        if (cToken && ast_nodes->current)
+        {
             struct ast_nodes *next_ast_nodes = malloc(sizeof(struct ast_nodes));
             ast_nodes->next = next_ast_nodes;
             ast_nodes = ast_nodes->next;
-        } else {
+        }
+        else
+        {
             printf("ENDdd\n");
+            return 1    ;
         }
         printf("%p\n", cToken); 
         // if (err) return 0;
@@ -262,6 +309,21 @@ void *evaluateNode(struct ast_node *ast_node, struct symbol_node *root_symbol_no
     {
         // printf("CONSTANT %s\n", ast_node->token->value);
         return ast_node->token->value;
+    }
+    else if (ast_node->type == AST_NODE_WHILE_LOOP){
+        char *value = evaluateNode(ast_node->left, root_symbol_node);
+        float cond = isalpha(value[0]) ? 1.0 : atof(value);
+        struct ast_nodes *body = ast_node->body;
+        while (cond)
+        {
+            int valid = evaluate(body, root_symbol_node);
+            if (!valid) return NULL;
+            value = evaluateNode(ast_node->left, root_symbol_node);
+            cond = isalpha(value[0]) ? 1.0 : atof(value);
+            char *val_return = malloc(sizeof(char) * 15);
+            val_return = "__END_WHILE_LOOP__";
+            if (!cond) return val_return;
+        } 
     }
     else if (ast_node->type == AST_NODE_OPERATOR)
     {
@@ -310,20 +372,37 @@ void *evaluateNode(struct ast_node *ast_node, struct symbol_node *root_symbol_no
         printf("ERR: var %s not found\n", ast_node->token->value);
         return NULL;
     }
+    else if (AST_NODE_SET_VAR)
+    {
+        struct symbol_node *c_symbol_node = root_symbol_node->next;
+        while (c_symbol_node != NULL)
+        {
+            if (strcmp(c_symbol_node->name, ast_node->left->token->value) == 0)
+            {
+                c_symbol_node->value = evaluateNode(ast_node->right,root_symbol_node);
+                return c_symbol_node->value;
+            }
+            c_symbol_node = c_symbol_node->next;
+        }
+        printf("ERR: var %s not found\n", ast_node->left->token->value);
+        return NULL;
+    }
     printf("[%d] FAILED;\n", ast_node->type);
     return NULL;
 }
 
-void evaluate(struct ast_nodes *ast_nodes, struct symbol_node *root_symbol_node)
+int evaluate(struct ast_nodes *ast_nodes, struct symbol_node *root_symbol_node)
 {
     while (ast_nodes != NULL && ast_nodes->current->type != 0)
     {
         struct ast_node *c_ast_node = ast_nodes->current;
+        // ast_nodes->current = malloc(sizeof(struct ast_node));
         char *value = evaluateNode(c_ast_node, root_symbol_node);
-        if (value == NULL) break;
+        if (value == NULL) return 0;
         printf("[%d] Returned: %s\n", c_ast_node->type, value);
         ast_nodes = ast_nodes->next;
     }
+    return 1;
 }
 
 void lex(char *sourceCode, struct token *root_token)
@@ -332,8 +411,8 @@ void lex(char *sourceCode, struct token *root_token)
     size_t sz = strlen(sourceCode);
     for (int x = 0; x < sz; x++)
     {
-        while (isspace(sourceCode[x]))
-            x++;
+        while (sourceCode[x] && isspace(sourceCode[x])) x++;
+
         int startIndex = -1;
         int endIndex = -1;
         struct token *nxt_token = malloc(sizeof(struct token));
@@ -390,16 +469,35 @@ void lex(char *sourceCode, struct token *root_token)
         else
         {
             startIndex = x;
-            while (!isspace(sourceCode[x + 1]))
+            while (sourceCode[x + 1] && !isspace(sourceCode[x + 1]))
                 x++;
             endIndex = x;
-
             char *value = malloc(sizeof(sizeof(char) * (endIndex - startIndex)));
             slice_str(sourceCode, value, startIndex, endIndex);
             // printf("%s\n", value);
             if (strcmp(value, "var") == 0)
             {
                 nxt_token->type = DECLARATION;
+                nxt_token->value = value;
+            }
+            else if (strcmp(value, "while") == 0)
+            {
+                nxt_token->type = WHILE_LOOP;
+                nxt_token->value = value;
+            }
+            else if (strcmp(value, "set") == 0)
+            {
+                nxt_token->type = SET_VAR;
+                nxt_token->value = value;
+            }
+            else if (strcmp(value, "__start__") == 0)
+            {
+                nxt_token->type = SPECIAL_OPEN_PAREN;
+                nxt_token->value = value;
+            }
+            else if (strcmp(value, "__end__") == 0)
+            {
+                nxt_token->type = SPECIAL_CLOSE_PAREN;
                 nxt_token->value = value;
             }
             else if (isalpha(sourceCode[startIndex]))
@@ -417,6 +515,7 @@ void lex(char *sourceCode, struct token *root_token)
         {
             cToken->next = nxt_token;
             cToken = cToken->next;
+            printf("token -> %s %d\n", nxt_token->value, nxt_token->type);
         }
     }
     printf("FINISHED\n");
@@ -481,6 +580,27 @@ int rule1_2_3(struct token *token, struct ast_node **ast_node, int type)
     return 0;
 }
 
+int rule_set_var_1_2_3(struct token *token, struct ast_node **ast_node, int type)
+{
+    if (
+        token_is_type(token, SET_VAR) &&
+        token_is_type(token->next, IDENTIFIER) &&
+        token_is_type(token->next->next, ASSIGNMENT) &&
+        token_is_type(token->next->next->next, type))
+    {
+        struct ast_node *ast_node_left = malloc(sizeof(struct ast_node));
+        struct ast_node *ast_node_right = malloc(sizeof(struct ast_node));
+
+        rule5(token->next, &ast_node_left);
+        rule0(token->next->next->next, &ast_node_right);
+
+        (*ast_node)->type = AST_NODE_SET_VAR;
+        (*ast_node)->left = ast_node_left;
+        (*ast_node)->right = ast_node_right;
+        return 1;
+    }
+    return 0;
+}
 
 int rule4(struct token *token, struct ast_node **ast_node, struct token **cToken)
 { // cToken internal
@@ -572,6 +692,8 @@ void show_ast_node(struct ast_node *ast_node)
         show_ast_node(ast_node->left);
     if (ast_node->right)
         show_ast_node(ast_node->right);
+    if (ast_node->body)
+        show_ast_nodes(ast_node->body);
 }
 
 void show_ast_nodes(struct ast_nodes *ast_nodes)
@@ -597,4 +719,83 @@ void slice_str(const char *str, char *buffer, size_t start, size_t end)
         buffer[j++] = str[i];
     }
     buffer[j] = 0;
+}
+
+int rule_while_loop(struct token *token, struct ast_node **ast_node, struct token **cToken)
+{
+    struct token *cp_token = token;
+    if (
+        token_is_type(token, WHILE_LOOP) &&
+        token_is_type(token->next, IDENTIFIER) &&
+        token_is_type(token->next->next, SPECIAL_OPEN_PAREN))
+    {
+        printf("D----SDSA\n");
+
+        struct ast_node *ast_node_left = malloc(sizeof(struct ast_node));
+        struct ast_nodes *ast_nodes_body = malloc(sizeof(struct ast_nodes));
+
+        token = token->next->next->next;
+        while (!token_is_type(token->next,SPECIAL_CLOSE_PAREN))
+            token = token->next;
+        struct token *cp_special_close_paren_token = token->next;
+        token->next = NULL;
+
+        printf("\nGETTING INSIDE_BODY\n");
+        int inside_body = get_ast(cp_token->next->next, &ast_nodes_body);
+        printf("inside_body %d %s\n\n", inside_body, cp_token->next->next->value);
+
+        int valid_conditional = rule5(cp_token->next, &ast_node_left);
+        printf("valid_conditional %d %s\n", valid_conditional, token->value);
+
+        // ast_nodes_body->current = malloc(sizeof(struct ast_node));
+        // ast_nodes_body->current->type = -1;
+
+        token->next = cp_special_close_paren_token;
+        token = token->next;
+        printf("PASSSS %d %d\n", token->type,SPECIAL_CLOSE_PAREN);
+
+        if (valid_conditional && inside_body && token->type == SPECIAL_CLOSE_PAREN)
+        {
+            *cToken = token;
+            if (token->next)
+                *cToken = token->next;
+            (*ast_node)->type = AST_NODE_WHILE_LOOP;
+            (*ast_node)->left = ast_node_left;
+            (*ast_node)->body = ast_nodes_body;
+            return 1;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+}
+
+int rule7(struct token *token, struct ast_node **ast_node, struct token **cToken)
+{
+    if (
+        token_is_type(token, SET_VAR) &&
+        token_is_type(token->next, IDENTIFIER) &&
+        token_is_type(token->next->next, ASSIGNMENT) &&
+        token_is_type(token->next->next->next, OPEN_PARENTHESIS))
+    {
+        struct ast_node *ast_node_left = malloc(sizeof(struct ast_node));
+        struct ast_node *ast_node_right = malloc(sizeof(struct ast_node));
+
+        rule5(token->next, &ast_node_left);
+
+        int rule4_valid = rule4(token->next->next->next, &ast_node_right, &token->next->next->next);
+        if (!rule4_valid)
+        {
+            printf("---> !rule4_valid\n");
+            return 0;
+        }
+        *cToken = token->next->next->next;
+
+        (*ast_node)->type = AST_NODE_SET_VAR;
+        (*ast_node)->left = ast_node_left;
+        (*ast_node)->right = ast_node_right;
+        return 1;
+    }
+    return 0;
 }
